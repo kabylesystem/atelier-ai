@@ -13,7 +13,54 @@ import {
   Users,
   UserRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const IDB_DB = "smart-prompter-v1";
+const IDB_STORE = "images";
+
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(key: string, blob: Blob): Promise<void> {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(blob, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGet(key: string): Promise<Blob | undefined> {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result as Blob | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(key: string): Promise<void> {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
 
 type Intent =
   | "photoreal"
@@ -491,6 +538,37 @@ export function App() {
   const [rewriteError, setRewriteError] = useState("");
   const [bankUrl, setBankUrl] = useState("");
   const [outputBankUrl, setOutputBankUrl] = useState("");
+  const [imageBlobUrls, setImageBlobUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const allRefs = new Set<string>();
+    for (const a of avatars) {
+      for (const src of a.images || []) {
+        if (src.startsWith("idb:")) allRefs.add(src.slice(4));
+      }
+    }
+    const missing = [...allRefs].filter((id) => !imageBlobUrls[id]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const additions: Record<string, string> = {};
+      for (const id of missing) {
+        const blob = await idbGet(id).catch(() => undefined);
+        if (blob) additions[id] = URL.createObjectURL(blob);
+      }
+      if (!cancelled && Object.keys(additions).length) {
+        setImageBlobUrls((prev) => ({ ...prev, ...additions }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [avatars, imageBlobUrls]);
+
+  function resolveSrc(src: string): string {
+    if (src.startsWith("idb:")) return imageBlobUrls[src.slice(4)] || "";
+    return src;
+  }
 
   const activeAvatar = avatars.find((avatar) => avatar.id === activeAvatarId) || avatars[0];
   const compiled = compilePrompt(rawPrompt, activeAvatar, controls);
@@ -533,22 +611,42 @@ export function App() {
   }
 
   function removeImageFromActiveAvatar(index: number) {
+    const src = activeAvatar.images?.[index];
     const next = (activeAvatar.images || []).filter((_, i) => i !== index);
     setAvatarImages(activeAvatar.id, next);
+    if (src && src.startsWith("idb:")) {
+      const id = src.slice(4);
+      idbDelete(id).catch(() => {});
+      const url = imageBlobUrls[id];
+      if (url) {
+        URL.revokeObjectURL(url);
+        setImageBlobUrls((prev) => {
+          const { [id]: _gone, ...rest } = prev;
+          return rest;
+        });
+      }
+    }
   }
 
   async function handleImageFile(file: File): Promise<string | null> {
     if (!file.type.startsWith("image/")) return null;
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Image is over 2MB — pick a smaller one or paste a URL instead.");
+    if (file.size > 15 * 1024 * 1024) {
+      alert("Image is over 15MB — pick a smaller one or paste a URL instead.");
       return null;
     }
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
+    const id = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `img-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await idbPut(id, file);
+    } catch (err) {
+      console.error("idbPut failed", err);
+      alert("Could not save image to local storage. Try a smaller file.");
+      return null;
+    }
+    const url = URL.createObjectURL(file);
+    setImageBlobUrls((prev) => ({ ...prev, [id]: url }));
+    return `idb:${id}`;
   }
 
   function addAvatar() {
@@ -696,7 +794,7 @@ export function App() {
                   }}
                 >
                     <span className="avatar-face" style={{ "--accent": avatar.accent || "#2266d2" } as React.CSSProperties}>
-                      {avatar.images?.[0] ? <img src={avatar.images[0]} alt="" /> : avatar.name.slice(0, 2).toUpperCase()}
+                      {avatar.images?.[0] ? <img src={resolveSrc(avatar.images[0])} alt="" /> : avatar.name.slice(0, 2).toUpperCase()}
                     </span>
                     <strong>{avatar.name}</strong>
                   </button>
@@ -720,7 +818,7 @@ export function App() {
                 <div className="image-bank-grid">
                   {(activeAvatar.images || []).map((src, i) => (
                     <div className="image-bank-tile" key={`${i}-${src.slice(0, 24)}`}>
-                      <img src={src} alt={`${activeAvatar.name} reference ${i + 1}`} />
+                      <img src={resolveSrc(src)} alt={`${activeAvatar.name} reference ${i + 1}`} />
                       <button
                         className="remove-tile"
                         type="button"
@@ -1041,26 +1139,48 @@ export function App() {
                 </p>
                 {(activeAvatar.images?.length ?? 0) > 0 ? (
                   <div className="reference-thumbs">
-                    {activeAvatar.images!.map((src, i) => (
-                      <button
-                        key={`${i}-${src.slice(0, 24)}`}
-                        type="button"
-                        className="reference-thumb"
-                        onClick={() => window.open(src, "_blank", "noopener")}
-                        title="Open in new tab — right-click to save, then attach to GPT Image 2"
-                      >
-                        <img src={src} alt={`${activeAvatar.name} reference ${i + 1}`} />
-                        <span
-                          className="thumb-action"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(src).catch(() => {});
-                          }}
+                    {activeAvatar.images!.map((src, i) => {
+                      const resolved = resolveSrc(src);
+                      const isLocal = src.startsWith("idb:");
+                      return (
+                        <button
+                          key={`${i}-${src.slice(0, 24)}`}
+                          type="button"
+                          className="reference-thumb"
+                          onClick={() => resolved && window.open(resolved, "_blank", "noopener")}
+                          title={isLocal
+                            ? "Open in new tab — right-click → Save image, then attach to GPT Image 2"
+                            : "Open in new tab — right-click to save, then attach to GPT Image 2"}
                         >
-                          Copy URL
-                        </span>
-                      </button>
-                    ))}
+                          <img src={resolved} alt={`${activeAvatar.name} reference ${i + 1}`} />
+                          <span
+                            className="thumb-action"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (isLocal) {
+                                const id = src.slice(4);
+                                const blob = await idbGet(id);
+                                if (blob && (navigator.clipboard as any).write) {
+                                  try {
+                                    await (navigator.clipboard as any).write([
+                                      new (window as any).ClipboardItem({ [blob.type]: blob }),
+                                    ]);
+                                  } catch {
+                                    if (resolved) window.open(resolved, "_blank", "noopener");
+                                  }
+                                } else if (resolved) {
+                                  window.open(resolved, "_blank", "noopener");
+                                }
+                              } else {
+                                navigator.clipboard.writeText(src).catch(() => {});
+                              }
+                            }}
+                          >
+                            {isLocal ? "Copy image" : "Copy URL"}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
