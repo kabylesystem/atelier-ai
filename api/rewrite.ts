@@ -75,7 +75,7 @@ export default async function handler(req: any, res: any) {
     };
 
     const response = await client.responses.create({
-      model: process.env.OPENAI_REWRITE_MODEL || "gpt-4.1-mini",
+      model: process.env.OPENAI_REWRITE_MODEL || "gpt-5.4-mini",
       input: [
         { role: "system", content: systemPrompt },
         {
