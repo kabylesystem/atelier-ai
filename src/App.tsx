@@ -757,7 +757,7 @@ export function App() {
     <main className="studio-shell">
       <header className="studio-header">
         <button className="brand" type="button" onClick={() => setPage("prompt")}>
-          <p>Smart Prompter</p>
+          <p>Atelier AI</p>
         </button>
 
         <nav className="page-nav" aria-label="Prompt workflow">
