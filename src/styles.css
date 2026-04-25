@@ -675,6 +675,165 @@ select:focus {
   font-size: 20px;
 }
 
+.reference-band {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  max-width: 980px;
+  margin: 0 auto 22px;
+  padding: 18px 22px;
+  border-radius: 18px;
+  background: #fff7e6;
+  border: 1px solid #f1d9a0;
+}
+
+.reference-thumb {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #f1eadb;
+  display: grid;
+  place-items: center;
+}
+
+.reference-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.reference-empty {
+  font-size: 12px;
+  color: #8b7d5d;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.reference-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.reference-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a37000;
+}
+
+.reference-copy strong {
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.reference-copy p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #6b6253;
+}
+
+.reference-thumbs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reference-thumbs .reference-thumb {
+  width: 78px;
+  height: 78px;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+}
+
+.reference-thumbs button.thumb-action {
+  position: absolute;
+  inset: auto 4px 4px auto;
+  background: rgba(31, 36, 33, 0.92);
+  color: #fff;
+  border: none;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.image-bank {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.image-bank-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.image-bank-tile {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f1eadb;
+}
+
+.image-bank-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-bank-tile button.remove-tile {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(31, 36, 33, 0.9);
+  color: #fff;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.image-bank-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.image-bank-add input[type="url"] {
+  flex: 1;
+  min-width: 220px;
+}
+
+.image-bank-add .upload-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #1f2421;
+  color: #f7f6f1;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.image-bank-add .upload-btn:hover {
+  background: #2d342f;
+}
+
 .score-ring {
   display: grid;
   width: 74px;

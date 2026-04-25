@@ -30,7 +30,7 @@ type Avatar = {
   identity: string;
   visualMemory: string;
   promptRules: string;
-  imageUrl?: string;
+  images: string[];
   accent?: string;
 };
 
@@ -87,7 +87,7 @@ const defaultAvatars: Avatar[] = [
       "Candid smartphone realism, intimate bedroom or apartment scenes, believable screen glow, natural skin texture, casual fitted tops, minimal makeup.",
     promptRules:
       "Prioritize raw realism, identity lock, imperfect physical details, and non-studio lighting. Avoid influencer polish unless asked.",
-    imageUrl: "",
+    images: [],
     accent: "#ff5d8f",
   },
   {
@@ -100,7 +100,7 @@ const defaultAvatars: Avatar[] = [
       "Define this avatar's stable wardrobe, environment, camera language, and emotional range here.",
     promptRules:
       "Restate identity constraints every time and keep edits surgical unless the raw prompt asks for a redesign.",
-    imageUrl: "",
+    images: [],
     accent: "#6c5ce7",
   },
 ];
@@ -135,7 +135,16 @@ const defaultControls: Controls = {
   lighting: "low-light mixed screen glow and warm ambient light",
   preserveIdentity: true,
   exactText: "",
-  negative: ["AI look", "beauty filter", "studio lighting", "watermark"],
+  negative: [
+    "AI look",
+    "beauty filter",
+    "studio lighting",
+    "watermark",
+    "flat background",
+    "empty background",
+    "out-of-focus background",
+    "studio backdrop",
+  ],
 };
 
 const shotTemplates = [
@@ -145,6 +154,33 @@ const shotTemplates = [
   "MacBook screen photographed from above, keyboard barely visible",
   "over-the-shoulder phone shot, casual framing, real-world perspective",
   "front-facing webcam preview photographed from a phone",
+];
+
+const devicePresets: { label: string; spec: string }[] = [
+  {
+    label: "iPhone 15 Pro — back cam",
+    spec: "shot on iPhone 15 Pro main camera, 24mm equivalent, f/1.78, slight Apple HDR processing, mild edge distortion, natural sensor noise in low light, slightly oversaturated reds, JPEG compression typical of iOS Camera app, 4032x3024 native crop, handheld micro-shake",
+  },
+  {
+    label: "iPhone — front selfie cam",
+    spec: "vertical iPhone front-camera selfie, 23mm equivalent, f/1.9, smartphone selfie lens compression, soft natural face lighting, mild iOS auto-skin smoothing, 3024x4032 portrait, slight overexposure on cheeks",
+  },
+  {
+    label: "MacBook FaceTime cam",
+    spec: "webcam-grade MacBook FaceTime camera, 1080p, soft auto-exposure, slightly washed-out colours, mild rolling-shutter softness, frontal lighting from screen, low-detail compression typical of video chat",
+  },
+  {
+    label: "Old Android — low light",
+    spec: "budget Android phone camera, 12MP, aggressive denoise, smeared shadow detail, warm white balance drift, visible JPEG blocking in dark areas, slight green colour cast",
+  },
+  {
+    label: "Security camera",
+    spec: "fixed CCTV camera angle, 4MP, top-down perspective, motion blur on movement, mild fisheye distortion, IR-tinged colour cast at night, timestamp overlay barely visible",
+  },
+  {
+    label: "GoPro action cam",
+    spec: "GoPro Hero wide-angle action shot, fisheye lens distortion, deep depth of field, vivid saturation, hard contrast, slight rolling shutter on motion",
+  },
 ];
 
 const lightingTemplates = [
@@ -162,9 +198,28 @@ function loadStoredState(): StoredState {
     if (!raw) {
       return { avatars: defaultAvatars, activeAvatarId: "jane", history: [] };
     }
-    const parsed = JSON.parse(raw) as StoredState;
+    const parsed = JSON.parse(raw) as StoredState & {
+      avatars?: Array<Avatar & { imageUrl?: string }>;
+    };
+    const migrated = (parsed.avatars?.length ? parsed.avatars : defaultAvatars).map((a) => {
+      const next: Avatar = {
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        identity: a.identity,
+        visualMemory: a.visualMemory,
+        promptRules: a.promptRules,
+        accent: a.accent,
+        images: Array.isArray((a as Avatar).images) ? (a as Avatar).images : [],
+      };
+      const legacy = (a as { imageUrl?: string }).imageUrl;
+      if (next.images.length === 0 && legacy && legacy.trim()) {
+        next.images = [legacy.trim()];
+      }
+      return next;
+    });
     return {
-      avatars: parsed.avatars?.length ? parsed.avatars : defaultAvatars,
+      avatars: migrated,
       activeAvatarId: parsed.activeAvatarId || "jane",
       history: parsed.history || [],
     };
@@ -302,7 +357,7 @@ function buildRealismRules(realism: Controls["realism"], intent: Intent): string
       ? " visible pixel grid, subtle moire, imperfect glass, screen glare,"
       : "";
 
-  return `Realism rules: raw smartphone photo look,${screenDetail} natural sensor noise, imperfect focus falloff, believable shadows, real surface texture, no studio polish, no AI look.`;
+  return `Realism rules: raw smartphone photo look,${screenDetail} natural sensor noise, imperfect focus falloff, believable shadows, real surface texture, no studio polish, no AI look. Background detail must match foreground detail level — render the full environment with sharp, named props by default, no flat backdrop, no blurred environment, no out-of-focus background unless the prompt explicitly asks for shallow depth-of-field.`;
 }
 
 function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): CompiledPrompt {
@@ -313,6 +368,14 @@ function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): C
     ? avatar.identity
     : "Identity can vary if the prompt requires it, but keep the subject coherent and physically believable.";
 
+  const refCount = avatar.images?.length ?? 0;
+  const referenceLine = refCount > 0
+    ? `${refCount} reference photo${refCount > 1 ? "s" : ""} of ${avatar.name} ${refCount > 1 ? "are" : "is"} attached to this generation. Treat them as the strict source of truth for the character's face, identity, age, body proportions, and skin tone. Use the first image as the canonical face. Do not redesign, beautify, or stylize. Preserve the same person across every output.`
+    : `No reference image is attached. Treat ${avatar.name}'s identity description as the canonical face memory and keep it consistent across generations.`;
+
+  const environmentLine =
+    "Render the scene in three depth layers — foreground, midground, background — each with concrete named props. List 4–6 secondary objects plausible for the location (surfaces, signage, cables, furniture, posters, dishes, decoration), name visible practical light sources (string lights, screen glow, neon, candle, window, lamp), and add real-world imperfections (dust, fingerprints, scuffs, scratches, peeled paint). The background must be as detailed and in-focus as the subject — never flat, empty, blurred, or studio-backdrop unless the prompt explicitly asks for shallow depth-of-field.";
+
   const sections = {
     image_settings: {
       aspect_ratio: controls.aspectRatio,
@@ -320,6 +383,10 @@ function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): C
       realism_mode: controls.realism,
     },
     subject_brief: idea,
+    reference_image: {
+      attached_count: refCount,
+      instruction: referenceLine,
+    },
     avatar_memory: {
       selected_avatar: avatar.name,
       role: avatar.role,
@@ -327,6 +394,7 @@ function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): C
       prompt_rules: avatar.promptRules,
     },
     scene_direction: buildIntentBlock(controls.intent),
+    environment_detail: environmentLine,
     camera_and_light: {
       shot: controls.shot,
       lighting: controls.lighting,
@@ -346,10 +414,14 @@ function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): C
     "",
     `Core request: ${idea}`,
     "",
+    `Reference image: ${referenceLine}`,
+    "",
     `Selected character: ${avatar.name} — ${avatar.role}.`,
     `Avatar memory: ${avatar.visualMemory}`,
     "",
     `Scene direction: ${sections.scene_direction}`,
+    "",
+    `Environment & background detail: ${environmentLine}`,
     "",
     `Camera and composition: ${controls.shot}. ${controls.lighting}. Make the image feel composed but not artificial. Keep the first read obvious and all important objects physically grounded.`,
     "",
@@ -417,6 +489,8 @@ export function App() {
   const [smartCompiled, setSmartCompiled] = useState<CompiledPrompt | null>(null);
   const [rewriteStatus, setRewriteStatus] = useState<"idle" | "loading" | "error">("idle");
   const [rewriteError, setRewriteError] = useState("");
+  const [bankUrl, setBankUrl] = useState("");
+  const [outputBankUrl, setOutputBankUrl] = useState("");
 
   const activeAvatar = avatars.find((avatar) => avatar.id === activeAvatarId) || avatars[0];
   const compiled = compilePrompt(rawPrompt, activeAvatar, controls);
@@ -444,6 +518,39 @@ export function App() {
     persist(next);
   }
 
+  function setAvatarImages(targetId: string, images: string[]) {
+    const next = avatars.map((avatar) =>
+      avatar.id === targetId ? { ...avatar, images } : avatar,
+    );
+    setAvatars(next);
+    persist(next);
+  }
+
+  function addImageToActiveAvatar(src: string) {
+    const trimmed = src.trim();
+    if (!trimmed) return;
+    setAvatarImages(activeAvatar.id, [...(activeAvatar.images || []), trimmed]);
+  }
+
+  function removeImageFromActiveAvatar(index: number) {
+    const next = (activeAvatar.images || []).filter((_, i) => i !== index);
+    setAvatarImages(activeAvatar.id, next);
+  }
+
+  async function handleImageFile(file: File): Promise<string | null> {
+    if (!file.type.startsWith("image/")) return null;
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Image is over 2MB — pick a smaller one or paste a URL instead.");
+      return null;
+    }
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
   function addAvatar() {
     const id = `avatar-${Date.now()}`;
     const nextAvatar: Avatar = {
@@ -453,7 +560,7 @@ export function App() {
       identity: "Define stable facial proportions, body shape, age range, expression language, and non-negotiable identity details.",
       visualMemory: "Define wardrobe, recurring environments, camera style, lighting taste, and vibe.",
       promptRules: "Define what every prompt should preserve and what should be avoided.",
-      imageUrl: "",
+      images: [],
       accent: "#00b894",
     };
     const next = [...avatars, nextAvatar];
@@ -493,12 +600,14 @@ export function App() {
     setRewriteStatus("loading");
     setRewriteError("");
     try {
+      const { images, ...avatarLite } = activeAvatar;
       const response = await fetch("/api/rewrite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rawPrompt,
-          avatar: activeAvatar,
+          avatar: avatarLite,
+          referenceImageCount: images?.length ?? 0,
           controls,
           localDraft: compiled,
         }),
@@ -587,7 +696,7 @@ export function App() {
                   }}
                 >
                     <span className="avatar-face" style={{ "--accent": avatar.accent || "#2266d2" } as React.CSSProperties}>
-                      {avatar.imageUrl ? <img src={avatar.imageUrl} alt="" /> : avatar.name.slice(0, 2).toUpperCase()}
+                      {avatar.images?.[0] ? <img src={avatar.images[0]} alt="" /> : avatar.name.slice(0, 2).toUpperCase()}
                     </span>
                     <strong>{avatar.name}</strong>
                   </button>
@@ -604,14 +713,62 @@ export function App() {
                 Role
                 <input value={activeAvatar.role} onChange={(event) => updateAvatar("role", event.target.value)} />
               </label>
-              <label>
-                Face image URL
-                <input
-                  value={activeAvatar.imageUrl || ""}
-                  onChange={(event) => updateAvatar("imageUrl", event.target.value)}
-                  placeholder="Paste first generated face/image URL here"
-                />
-              </label>
+              <div className="image-bank">
+                <label style={{ display: "block", fontWeight: 700, fontSize: 14 }}>
+                  Reference image bank
+                </label>
+                <div className="image-bank-grid">
+                  {(activeAvatar.images || []).map((src, i) => (
+                    <div className="image-bank-tile" key={`${i}-${src.slice(0, 24)}`}>
+                      <img src={src} alt={`${activeAvatar.name} reference ${i + 1}`} />
+                      <button
+                        className="remove-tile"
+                        type="button"
+                        aria-label="Remove image"
+                        onClick={() => removeImageFromActiveAvatar(i)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="image-bank-add">
+                  <input
+                    type="url"
+                    value={bankUrl}
+                    onChange={(event) => setBankUrl(event.target.value)}
+                    placeholder="Paste image URL"
+                  />
+                  <button
+                    type="button"
+                    className="upload-btn"
+                    onClick={() => {
+                      addImageToActiveAvatar(bankUrl);
+                      setBankUrl("");
+                    }}
+                  >
+                    Add URL
+                  </button>
+                  <label className="upload-btn" style={{ cursor: "pointer" }}>
+                    Upload file
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const dataUrl = await handleImageFile(file);
+                        if (dataUrl) addImageToActiveAvatar(dataUrl);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: "#6b6253" }}>
+                  Stored locally. Attach these to GPT Image 2 to lock identity.
+                </p>
+              </div>
               <label>
                 Accent color
                 <input
@@ -760,6 +917,19 @@ export function App() {
                     value={controls.shot}
                     onChange={(event) => setControls({ ...controls, shot: event.target.value })}
                   />
+                  <div className="template-row" aria-label="Device camera presets">
+                    {devicePresets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className="device-preset"
+                        onClick={() => setControls({ ...controls, shot: preset.spec })}
+                        title={preset.spec}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="template-row">
                     {shotTemplates.map((template) => (
                       <button key={template} type="button" onClick={() => setControls({ ...controls, shot: template })}>
@@ -856,6 +1026,85 @@ export function App() {
                 <Save size={18} />
                 Save
               </button>
+            </section>
+
+            <section className="reference-band" aria-label="Reference images to attach">
+              <div className="reference-copy">
+                <span className="reference-tag">Step 1 — Attach</span>
+                <strong>
+                  {(activeAvatar.images?.length ?? 0) > 0
+                    ? `Attach ${activeAvatar.images!.length} reference image${activeAvatar.images!.length > 1 ? "s" : ""} of ${activeAvatar.name} on GPT Image 2, then paste the prompt below.`
+                    : `No reference image set for ${activeAvatar.name}. Add one in the character page so identity stays locked across generations.`}
+                </strong>
+                <p>
+                  GPT Image 2 uses uploaded references as the source of truth for face/identity. Without them, the character drifts.
+                </p>
+                {(activeAvatar.images?.length ?? 0) > 0 ? (
+                  <div className="reference-thumbs">
+                    {activeAvatar.images!.map((src, i) => (
+                      <button
+                        key={`${i}-${src.slice(0, 24)}`}
+                        type="button"
+                        className="reference-thumb"
+                        onClick={() => window.open(src, "_blank", "noopener")}
+                        title="Open in new tab — right-click to save, then attach to GPT Image 2"
+                      >
+                        <img src={src} alt={`${activeAvatar.name} reference ${i + 1}`} />
+                        <span
+                          className="thumb-action"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(src).catch(() => {});
+                          }}
+                        >
+                          Copy URL
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="reference-band" aria-label="Add result to bank">
+              <div className="reference-copy" style={{ width: "100%" }}>
+                <span className="reference-tag">Step 3 — Round-trip</span>
+                <strong>Add the GPT Image 2 result back to {activeAvatar.name}'s bank.</strong>
+                <p>Paste the result here to grow the reference set so future generations stay consistent.</p>
+                <div className="image-bank-add">
+                  <input
+                    type="url"
+                    value={outputBankUrl}
+                    onChange={(event) => setOutputBankUrl(event.target.value)}
+                    placeholder="Paste GPT Image 2 result URL"
+                  />
+                  <button
+                    type="button"
+                    className="upload-btn"
+                    onClick={() => {
+                      addImageToActiveAvatar(outputBankUrl);
+                      setOutputBankUrl("");
+                    }}
+                  >
+                    Add URL
+                  </button>
+                  <label className="upload-btn" style={{ cursor: "pointer" }}>
+                    Upload file
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const dataUrl = await handleImageFile(file);
+                        if (dataUrl) addImageToActiveAvatar(dataUrl);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
             </section>
 
             <section className="output-layout">

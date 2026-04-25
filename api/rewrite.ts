@@ -21,12 +21,15 @@ Rules:
 - Expand vague scenes into concrete visual scenes with objects, camera, light, physical details, and constraints.
 - Make the prompt feel like a professional creative brief, not keyword stuffing.
 - If the user asks for realism, optimize for raw phone-photo believability.
-- Use concise sections: Image settings, Core scene, Character continuity, Camera, Lighting, Realism rules, Negative.
-- The finalPrompt should be detailed enough to materially improve the user's raw prompt, usually 220-420 words.
+- Use concise labeled sections separated by blank lines (NOT JSON): Image settings, Core scene, Reference image, Character continuity, Environment & background detail, Camera, Lighting, Realism rules, Negative.
+- ALWAYS include a "Reference image" section. If avatar.images has N>0 items, state that N reference photo(s) of the character are attached to this generation and the model must use them as the strict source of truth for face, identity, age, body proportions, and skin tone — no redesign, no beautification, same person across outputs. The first image is the canonical face. If avatar.images is empty, still include the section and instruct the model to treat the identity description as canonical face memory.
+- ALWAYS include an "Environment & background detail" section that treats the background as equally important as the subject. Describe three depth layers (foreground / midground / background), name 4–6 concrete secondary props plausible for the location (e.g. recording studio → mixing console knobs, monitor speakers, cable spaghetti, acoustic foam panels, framed records, candle, RGB ambient strip), name visible practical light sources, and include real-world imperfections (dust, scuffs, scratches). The output prompt MUST explicitly forbid flat / empty / blurred / studio-backdrop backgrounds unless the user asked for shallow depth-of-field.
+- If the user provided a precise device camera spec in controls.shot (focal length, aperture, sensor traits), preserve those numeric details verbatim in the Camera section — do not generalize them.
+- The finalPrompt should be detailed enough to materially improve the user's raw prompt, usually 260–460 words.
 - Add concrete environmental details inferred from the scene: materials, background objects, social context, imperfections, real-world mess, and plausible lighting sources.
 - For scenes with multiple people, explicitly describe relationship energy, separate faces, posture, and natural interaction.
 - Avoid policy-unsafe or sexualized content. Keep characters adult only when implied by the avatar profile; otherwise stay neutral.
-- Return strict JSON only.
+- Return strict JSON only (the wrapper response is JSON; the finalPrompt string itself must be plain natural-language sections with linebreaks, NOT a JSON object).
 `;
 
 function fallbackPrompt(body: any) {
@@ -51,9 +54,18 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = req.body || {};
+    const avatar = body.avatar || {};
+    const referenceImageCount = typeof body.referenceImageCount === "number" ? body.referenceImageCount : 0;
     const payload = {
       rawPrompt: body.rawPrompt,
-      avatar: body.avatar,
+      avatar: {
+        name: avatar.name,
+        role: avatar.role,
+        identity: avatar.identity,
+        visualMemory: avatar.visualMemory,
+        promptRules: avatar.promptRules,
+      },
+      referenceImageCount,
       controls: body.controls,
       localDraft: body.localDraft,
     };
