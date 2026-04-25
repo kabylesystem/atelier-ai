@@ -738,29 +738,49 @@ select:focus {
 
 .reference-thumbs {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
+  margin-top: 10px;
 }
 
 .reference-thumbs .reference-thumb {
-  width: 78px;
-  height: 78px;
-  border-radius: 12px;
+  width: 110px;
+  height: 110px;
+  border-radius: 14px;
   position: relative;
   cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #e6dec4;
+  background: #f1eadb;
+  display: block;
 }
 
-.reference-thumbs button.thumb-action {
+.reference-thumbs .reference-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.reference-thumbs .thumb-action {
   position: absolute;
-  inset: auto 4px 4px auto;
+  bottom: 6px;
+  right: 6px;
   background: rgba(31, 36, 33, 0.92);
   color: #fff;
   border: none;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 3px 7px;
+  padding: 4px 9px;
   border-radius: 999px;
   cursor: pointer;
+  line-height: 1;
+  z-index: 2;
+}
+
+.reference-thumbs .thumb-action:hover {
+  background: #1f2421;
 }
 
 .image-bank {

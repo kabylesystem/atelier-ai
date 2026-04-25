@@ -1143,17 +1143,25 @@ export function App() {
                       const resolved = resolveSrc(src);
                       const isLocal = src.startsWith("idb:");
                       return (
-                        <button
+                        <div
                           key={`${i}-${src.slice(0, 24)}`}
-                          type="button"
                           className="reference-thumb"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => resolved && window.open(resolved, "_blank", "noopener")}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              if (resolved) window.open(resolved, "_blank", "noopener");
+                            }
+                          }}
                           title={isLocal
                             ? "Open in new tab — right-click → Save image, then attach to GPT Image 2"
                             : "Open in new tab — right-click to save, then attach to GPT Image 2"}
                         >
                           <img src={resolved} alt={`${activeAvatar.name} reference ${i + 1}`} />
-                          <span
+                          <button
+                            type="button"
                             className="thumb-action"
                             onClick={async (e) => {
                               e.stopPropagation();
@@ -1165,20 +1173,21 @@ export function App() {
                                     await (navigator.clipboard as any).write([
                                       new (window as any).ClipboardItem({ [blob.type]: blob }),
                                     ]);
+                                    return;
                                   } catch {
                                     if (resolved) window.open(resolved, "_blank", "noopener");
+                                    return;
                                   }
-                                } else if (resolved) {
-                                  window.open(resolved, "_blank", "noopener");
                                 }
+                                if (resolved) window.open(resolved, "_blank", "noopener");
                               } else {
                                 navigator.clipboard.writeText(src).catch(() => {});
                               }
                             }}
                           >
-                            {isLocal ? "Copy image" : "Copy URL"}
-                          </span>
-                        </button>
+                            {isLocal ? "Copy" : "URL"}
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
