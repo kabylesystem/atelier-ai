@@ -294,6 +294,32 @@ function includesAny(text: string, words: string[]): boolean {
   return words.some((word) => text.includes(word));
 }
 
+type CameraStyle = "cctv" | "gopro" | "webcam" | "android-low" | "smartphone";
+
+function detectCameraStyle(shot: string): CameraStyle {
+  const s = (shot || "").toLowerCase();
+  if (s.includes("cctv") || s.includes("security camera")) return "cctv";
+  if (s.includes("gopro")) return "gopro";
+  if (s.includes("webcam") || s.includes("facetime")) return "webcam";
+  if (s.includes("android") || s.includes("budget")) return "android-low";
+  return "smartphone";
+}
+
+function realismLabelFor(style: CameraStyle): string {
+  switch (style) {
+    case "cctv":
+      return "raw fixed CCTV / security-camera footage characteristics: low resolution, mild fisheye, soft motion blur on movement, IR-tinged colour cast at night, faint timestamp overlay, no cinematic polish, no smartphone aesthetic";
+    case "gopro":
+      return "raw GoPro action-camera characteristics: wide-angle fisheye distortion, deep depth of field, vivid saturation, hard contrast, slight rolling shutter on motion, no studio polish, no smartphone aesthetic";
+    case "webcam":
+      return "webcam-grade video-call characteristics: 1080p softness, slightly washed colours, mild rolling-shutter softness, frontal flat lighting, low-detail compression, no smartphone aesthetic";
+    case "android-low":
+      return "budget Android phone characteristics: aggressive denoise, smeared shadow detail, warm white balance drift, visible JPEG blocking in dark areas, slight green colour cast";
+    default:
+      return "raw smartphone photo look: natural sensor noise, imperfect focus falloff, believable shadows, real surface texture, no studio polish, no AI look";
+  }
+}
+
 function enhanceCoreRequest(rawPrompt: string, avatar: Avatar, controls: Controls): string {
   const idea = inferRawDetails(rawPrompt);
   const lower = idea.toLowerCase();
@@ -322,20 +348,38 @@ function enhanceCoreRequest(rawPrompt: string, avatar: Avatar, controls: Control
     );
   }
 
-  if (includesAny(lower, ["iphone", "selfie", "mirror", "photo", "ugc", "snap"])) {
+  const cameraStyle = detectCameraStyle(controls.shot);
+  const isPhone = cameraStyle === "smartphone";
+
+  if (isPhone && includesAny(lower, ["iphone", "selfie", "mirror", "photo", "ugc", "snap"])) {
     details.push(
       "Use raw smartphone-photo language: imperfect framing, slight motion softness, natural skin texture, tiny exposure flaws, and a casual social-media capture feeling.",
     );
   }
 
   if (includesAny(lower, ["nuit", "night", "soir", "dark", "late"])) {
-    details.push(
-      "Set the lighting at night with mixed practical light, warm indoor spill, cooler phone-screen highlights, and believable low-light noise.",
-    );
+    if (isPhone) {
+      details.push(
+        "Set the lighting at night with mixed practical light, warm indoor spill, cooler phone-screen highlights, and believable low-light noise.",
+      );
+    } else if (cameraStyle === "cctv") {
+      details.push(
+        "Set the scene at night with mixed practical light, warm indoor spill, and the cool IR-tinged cast typical of CCTV night footage. No smartphone screen-glow language.",
+      );
+    } else {
+      details.push(
+        "Set the scene at night with mixed practical light and warm indoor spill, matching the chosen camera's signature.",
+      );
+    }
   }
 
-  if (controls.intent === "photoreal") {
+  if (controls.intent === "photoreal" && isPhone) {
     details.push("Do not make it look like a fashion shoot; it should feel like a real memory caught on a phone.");
+  }
+  if (controls.intent === "photoreal" && !isPhone) {
+    details.push(
+      `Do not make it look like a smartphone selfie or fashion shoot — the entire image must read as captured by the device described in the Camera section (${cameraStyle.toUpperCase()}).`,
+    );
   }
 
   if (controls.intent === "avatar" || controls.preserveIdentity) {
@@ -390,7 +434,7 @@ function buildIntentBlock(intent: Intent): string {
   ].join(" ");
 }
 
-function buildRealismRules(realism: Controls["realism"], intent: Intent): string {
+function buildRealismRules(realism: Controls["realism"], intent: Intent, shot: string): string {
   if (realism === "stylized") {
     return "Stylization rules: coherent art direction, controlled palette, intentional texture, no generic AI fantasy polish, no random decorative clutter.";
   }
@@ -399,12 +443,13 @@ function buildRealismRules(realism: Controls["realism"], intent: Intent): string
     return "Production rules: high-end but believable finish, clean composition, precise materials, refined lighting, professional color management, no over-sharpened CGI look.";
   }
 
+  const cameraStyle = detectCameraStyle(shot);
   const screenDetail =
-    intent === "screen"
+    intent === "screen" && cameraStyle === "smartphone"
       ? " visible pixel grid, subtle moire, imperfect glass, screen glare,"
       : "";
 
-  return `Realism rules: raw smartphone photo look,${screenDetail} natural sensor noise, imperfect focus falloff, believable shadows, real surface texture, no studio polish, no AI look. Background detail must match foreground detail level — render the full environment with sharp, named props by default, no flat backdrop, no blurred environment, no out-of-focus background unless the prompt explicitly asks for shallow depth-of-field.`;
+  return `Realism rules: ${realismLabelFor(cameraStyle)},${screenDetail} matching the device described in the Camera section. Background detail must match foreground detail level — render the full environment with sharp, named props by default, no flat backdrop, no blurred environment, no out-of-focus background unless the prompt explicitly asks for shallow depth-of-field. The Core scene, Camera, and Realism rules sections must all describe the same camera/device — never mix smartphone language with CCTV/GoPro/webcam shots.`;
 }
 
 function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): CompiledPrompt {
@@ -452,7 +497,7 @@ function compilePrompt(rawPrompt: string, avatar: Avatar, controls: Controls): C
     text_rules: exactText
       ? `Render this exact text verbatim: "${exactText}". No extra words, no duplicate text, no misspellings.`
       : "Do not add text unless the raw prompt explicitly asks for it.",
-    realism_rules: buildRealismRules(controls.realism, controls.intent),
+    realism_rules: buildRealismRules(controls.realism, controls.intent, controls.shot),
     negative_prompt: negative,
   };
 
