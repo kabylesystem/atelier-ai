@@ -527,6 +527,12 @@ select:focus {
   width: 100%;
 }
 
+.mode-hint {
+  margin: -4px 0 14px;
+  font-size: 13px;
+  color: #6b6253;
+}
+
 .intent-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

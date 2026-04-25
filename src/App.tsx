@@ -153,12 +153,21 @@ const defaultAvatars: Avatar[] = [
 ];
 
 const intentLabels: Record<Intent, string> = {
-  photoreal: "Photoreal",
+  photoreal: "Real photo",
   screen: "Screen / UI",
-  avatar: "Avatar",
+  avatar: "Portrait",
   poster: "Poster",
   product: "Product",
   edit: "Edit",
+};
+
+const intentDescriptions: Record<Intent, string> = {
+  photoreal: "Default for character shots. Raw phone-style realism, full scene with background.",
+  screen: "Photo OF a physical screen showing UI — not a flat screenshot.",
+  avatar: "Tight headshot/portrait. Pick this only for face-focused images.",
+  poster: "Editorial poster or campaign with text, layout, and hierarchy.",
+  product: "Commercial product shot with accurate materials and reflections.",
+  edit: "Surgical edit of an existing image — change X, preserve Y.",
 };
 
 const negativeOptions = [
@@ -193,15 +202,6 @@ const defaultControls: Controls = {
     "studio backdrop",
   ],
 };
-
-const shotTemplates = [
-  "raw iPhone mirror selfie, slightly tilted, close distance",
-  "high-angle candid smartphone photo, subject framed off-center",
-  "vertical iPhone selfie, close social distance, imperfect crop",
-  "MacBook screen photographed from above, keyboard barely visible",
-  "over-the-shoulder phone shot, casual framing, real-world perspective",
-  "front-facing webcam preview photographed from a phone",
-];
 
 const devicePresets: { label: string; spec: string }[] = [
   {
@@ -682,6 +682,23 @@ export function App() {
     persist(avatars, next);
   }
 
+  function historyTitle(item: HistoryItem): string {
+    const raw = (item.rawPrompt || "").trim();
+    if (raw) return raw.length > 90 ? raw.slice(0, 87).trim() + "…" : raw;
+    const fp = item.finalPrompt || "";
+    const coreMatch = fp.match(/Core (?:request|scene)[:\s]+([^\n]+)/i);
+    if (coreMatch) {
+      const t = coreMatch[1].trim();
+      return t.length > 90 ? t.slice(0, 87).trim() + "…" : t;
+    }
+    const firstLine = fp
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l && !/^image settings/i.test(l) && !/^reference/i.test(l));
+    if (firstLine) return firstLine.length > 90 ? firstLine.slice(0, 87).trim() + "…" : firstLine;
+    return "Untitled prompt";
+  }
+
   function removeHistoryItem(id: string) {
     const next = history.filter((item) => item.id !== id);
     setHistory(next);
@@ -717,7 +734,18 @@ export function App() {
       const data = (await response.json()) as CompiledPrompt;
       setSmartCompiled(data);
       setPage("output");
-      saveStoredState({ avatars, history, activeAvatarId });
+      const item: HistoryItem = {
+        id: `history-${Date.now()}`,
+        avatarId: activeAvatar.id,
+        createdAt: nowLabel(),
+        rawPrompt,
+        finalPrompt: data.finalPrompt,
+        structuredPrompt: data.structuredPrompt,
+        score: data.score,
+      };
+      const nextHistory = [item, ...history].slice(0, 80);
+      setHistory(nextHistory);
+      saveStoredState({ avatars, history: nextHistory, activeAvatarId });
       setRewriteStatus("idle");
     } catch (error) {
       setRewriteStatus("error");
@@ -961,6 +989,9 @@ export function App() {
                 <SlidersHorizontal size={18} />
                 <span>Mode</span>
               </div>
+              <p className="mode-hint">
+                Avatar identity is always preserved when the toggle below is on — Mode just picks the output style.
+              </p>
               <div className="intent-grid">
                 {(Object.keys(intentLabels) as Intent[]).map((intent) => (
                   <button
@@ -970,7 +1001,7 @@ export function App() {
                     onClick={() => setControls({ ...controls, intent })}
                   >
                     <strong>{intentLabels[intent]}</strong>
-                    <span>{buildIntentBlock(intent).split(".")[0]}.</span>
+                    <span>{intentDescriptions[intent]}</span>
                   </button>
                 ))}
               </div>
@@ -1025,13 +1056,6 @@ export function App() {
                         title={preset.spec}
                       >
                         {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="template-row">
-                    {shotTemplates.map((template) => (
-                      <button key={template} type="button" onClick={() => setControls({ ...controls, shot: template })}>
-                        {template}
                       </button>
                     ))}
                   </div>
@@ -1294,11 +1318,17 @@ export function App() {
                       type="button"
                       onClick={() => {
                         setRawPrompt(item.rawPrompt);
+                        setSmartCompiled({
+                          finalPrompt: item.finalPrompt,
+                          structuredPrompt: item.structuredPrompt,
+                          score: item.score,
+                          suggestions: [],
+                        });
                         setPage("output");
                       }}
                     >
                       <span>{item.createdAt}</span>
-                      <strong>{item.rawPrompt || "Untitled prompt"}</strong>
+                      <strong>{historyTitle(item)}</strong>
                       <small>Score {item.score}</small>
                     </button>
                     <button
