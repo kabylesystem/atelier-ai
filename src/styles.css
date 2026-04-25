@@ -73,52 +73,6 @@ button {
   text-align: left;
 }
 
-.brand-mark {
-  position: relative;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 auto;
-  border-radius: 16px;
-  background:
-    linear-gradient(135deg, var(--pink), var(--blue) 52%, #111 100%);
-  box-shadow: 0 16px 38px rgba(79, 70, 229, 0.24);
-}
-
-.brand-mark span {
-  position: absolute;
-  left: 14px;
-  top: 14px;
-  width: 18px;
-  height: 18px;
-  color: transparent;
-  background: white;
-  clip-path: polygon(50% 0, 61% 36%, 100% 50%, 61% 64%, 50% 100%, 39% 64%, 0 50%, 39% 36%);
-  transform: rotate(18deg);
-}
-
-.brand-mark::before,
-.brand-mark::after {
-  position: absolute;
-  content: "";
-  background: white;
-}
-
-.brand-mark::before {
-  right: 10px;
-  bottom: 11px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.brand-mark::after {
-  left: 11px;
-  bottom: 10px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-
 .brand p,
 .brand span,
 .stage-heading p,
